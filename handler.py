@@ -34,7 +34,10 @@ print("Loading VoxCPM2 model:", MODEL_ID, flush=True)
 model = VoxCPM.from_pretrained(
     hf_model_id=MODEL_ID,
     load_denoiser=True,
-    optimize=True,
+    # torch.compile (optimize=True) requires a C compiler in the image, which
+    # this container does not ship. Disabled to avoid a BackendCompilerFailed
+    # crash loop; eager mode is slightly slower per-inference but reliable.
+    optimize=False,
 )
 print("Model loaded.", flush=True)
 
