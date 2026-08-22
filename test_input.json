@@ -1,0 +1,7 @@
+{
+  "input": {
+    "text": "Bonjour, ceci est un test de synthese vocale avec VoxCPM2.",
+    "cfg_value": 2.0,
+    "inference_timesteps": 10
+  }
+}
