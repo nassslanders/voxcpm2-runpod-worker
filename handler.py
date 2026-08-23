@@ -29,7 +29,6 @@ import runpod
 from voxcpm import VoxCPM
 
 MODEL_ID = os.environ.get("VOXCPM_MODEL_ID", "openbmb/VoxCPM2")
-SAMPLE_RATE = int(os.environ.get("VOXCPM_SAMPLE_RATE", "16000"))
 
 print("Loading VoxCPM2 model:", MODEL_ID, flush=True)
 model = VoxCPM.from_pretrained(
@@ -41,6 +40,14 @@ model = VoxCPM.from_pretrained(
     optimize=False,
 )
 print("Model loaded.", flush=True)
+
+# Was hardcoded to 16000 (the AudioVAE's *input/encode* rate) but the model's
+# real *output* rate is 48000 (config.json's audio_vae_config.out_sample_rate) --
+# every WAV this handler wrote was mislabeled at 1/3 its real rate, playing
+# 3x too slow/low-pitched in any client. Read the model's own attribute
+# instead of hardcoding a number that can silently go stale.
+SAMPLE_RATE = int(os.environ.get("VOXCPM_SAMPLE_RATE", str(model.tts_model.sample_rate)))
+print("Using output sample_rate:", SAMPLE_RATE, flush=True)
 
 # The exact keyword arguments accepted by generation differ between voxcpm
 # releases (and between the VoxCPM vs VoxCPM2 internal code paths that the
@@ -130,8 +137,23 @@ def handler(job):
             minimal_kwargs = {k: v for k, v in minimal_kwargs.items() if v is not None}
             wav = model.generate(**minimal_kwargs)
 
+        wav_arr = np.asarray(wav)
+        n_nan = int(np.isnan(wav_arr).sum())
+        n_inf = int(np.isinf(wav_arr).sum())
+        print(
+            "wav diagnostics:",
+            "shape=", wav_arr.shape,
+            "dtype=", wav_arr.dtype,
+            "min=", float(np.nanmin(wav_arr)) if wav_arr.size else None,
+            "max=", float(np.nanmax(wav_arr)) if wav_arr.size else None,
+            "n_nan=", n_nan,
+            "n_inf=", n_inf,
+            "model.tts_model.sample_rate=", getattr(model.tts_model, "sample_rate", None),
+            flush=True,
+        )
+
         buf = io.BytesIO()
-        sf.write(buf, np.asarray(wav), SAMPLE_RATE, format="WAV")
+        sf.write(buf, wav_arr, SAMPLE_RATE, format="WAV")
         audio_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
         return {"audio_base64": audio_b64, "sample_rate": SAMPLE_RATE}
